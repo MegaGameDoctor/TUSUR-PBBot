@@ -8,7 +8,7 @@ from telebot import types
 
 waitingToColorChoose = list()
 
-bot = telebot.TeleBot('7574868739:AAFvXmGBX6oVPeQ5Nyz4G9UpN7DNydhxap8')
+bot = telebot.TeleBot('ВСТАВИТЬ ТОКЕН СЮДА')
 
 conn = sqlite3.connect('accounts.sqlite', check_same_thread=False)
 cursor = conn.cursor()
