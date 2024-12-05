@@ -9,7 +9,7 @@ from telebot import types
 
 waitingToColorChoose = list()
 
-bot = telebot.TeleBot('ТОКЕН ОТ БОТА СЮДА')
+bot = telebot.TeleBot('СЮДА ТОКЕН БОТА')
 
 conn = sqlite3.connect('accounts.sqlite', check_same_thread=False)
 cursor = conn.cursor()
@@ -25,6 +25,9 @@ def answer(call):
     if call.data.startswith("paint@") and player in waitingToColorChoose:
         waitingToColorChoose.remove(player)
         bot.delete_message(call.message.chat.id, call.message.message_id)
+        if call.data == "paint@cancel":
+            bot.send_message(call.message.chat.id, "Закрашивание отменено")
+            return
         msgID = bot.send_message(call.message.chat.id, "Обработка закрашивания...").message_id
         data = call.data.split("@")
         answer = paintPixelViaAPI(player, hashedPassword, data[2], data[3], data[4])
@@ -39,6 +42,8 @@ def answer(call):
             seconds = answer.split(":")[1]
             bot.send_message(call.message.chat.id,
                              "Не так быстро! Вы сможете закрасить пиксель через " + seconds + " сек.")
+    else:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
 
 
 def createOrUpdateAccount(tg_id, player, hashedPassword):
@@ -92,7 +97,9 @@ def get_text_messages(message):
     player = getAccountName(message.from_user.id)
     if message.text.startswith("/auth "):
         data = message.text.replace("/auth ", "").split(" ")
-        print(len(data))
+        if len(data) != 2:
+            bot.send_message(message.from_user.id, "Команда использована некорректно")
+            return
         name = data[0]
         hashedPassword = hashlib.md5(data[1].encode()).hexdigest()
         if len(name) < 3 or len(name) > 10 or len(name) < 3 or len(name) > 10:
@@ -103,6 +110,7 @@ def get_text_messages(message):
                 createOrUpdateAccount(message.from_user.id, name, hashedPassword)
                 bot.send_message(message.from_user.id,
                                  "Вы успешно привязали аккаунт " + name + " к этому Телеграмм аккаунту")
+                print("Игрок " + name + " успешно авторизован")
             if apiAnswer == "INCORRECT_PASSWORD":
                 bot.send_message(message.from_user.id,
                                  "Вы указали неверный пароль")
@@ -123,16 +131,31 @@ def get_text_messages(message):
                 math.floor((nextPixel - current_milli_time()) / 1000)) + " сек.")
             return
         coords = message.text.replace("/paint ", "")
-        x = coords.split(";")[0]
-        y = coords.split(";")[1]
+        xyData = coords.split(";")
+        if len(xyData) != 2:
+            bot.send_message(message.from_user.id, "Команда использована некорректно")
+            return
+
+        try:
+            x = xyData[0]
+            y = xyData[1]
+            if int(x) < 0 or int(y) < 0:
+                bot.send_message(message.from_user.id, "Указаны несуществующие координаты")
+                return
+        except:
+            bot.send_message(message.from_user.id, "Координаты указаны не по формату")
+            return
+
         waitingToColorChoose.append(player)
         kb = types.InlineKeyboardMarkup(row_width=1)
-        kb.add(
-            types.InlineKeyboardButton(text='Красный', callback_data='paint@' + player + '@' + x + '@' + y + '@-65536'))
+        kb.add(types.InlineKeyboardButton(text='Красный',
+                                          callback_data='paint@' + player + '@' + x + '@' + y + '@-65536'))
         kb.add(types.InlineKeyboardButton(text='Зелёный',
                                           callback_data='paint@' + player + '@' + x + '@' + y + '@-14390489'))
         kb.add(types.InlineKeyboardButton(text='Голубой',
                                           callback_data='paint@' + player + '@' + x + '@' + y + '@-16711681'))
+        kb.add(types.InlineKeyboardButton(text='Отменить',
+                                          callback_data='paint@cancel'))
         bot.send_message(message.from_user.id, "Выбраны координаты (" + coords + "). Теперь выберите цвет:",
                          reply_markup=kb)
         return
@@ -154,5 +177,6 @@ def get_text_messages(message):
         return
 
 
+print("Бот запущен")
 bot.polling(none_stop=True, interval=0)
 conn.close()
