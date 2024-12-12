@@ -9,12 +9,12 @@ from telebot import types
 
 waitingToColorChoose = list()
 
-bot = telebot.TeleBot('СЮДА ТОКЕН БОТА')
+bot = telebot.TeleBot('СЮДА ТОКЕН')
 
 conn = sqlite3.connect('accounts.sqlite', check_same_thread=False)
 cursor = conn.cursor()
 cursor.execute(
-    "CREATE TABLE IF NOT EXISTS accounts (`tg_id` BIGINT NOT NULL, `player` VARCHAR(255) NOT NULL, `password` TEXT NOT NULL, UNIQUE (`tg_id`), UNIQUE (`player`))")
+    "CREATE TABLE IF NOT EXISTS accounts (`tg_id` BIGINT NOT NULL, `player` VARCHAR(255) NOT NULL, `password` TEXT NOT NULL, `paintHistory` BOOLEAN NOT NULL, UNIQUE (`tg_id`), UNIQUE (`player`))")
 conn.commit()
 
 
@@ -42,6 +42,10 @@ def answer(call):
             seconds = answer.split(":")[1]
             bot.send_message(call.message.chat.id,
                              "Не так быстро! Вы сможете закрасить пиксель через " + seconds + " сек.")
+    elif call.data == "paintHistory@update":
+        bot.edit_message_text("Обновление данных...", call.message.chat.id, call.message.message_id)
+        sendPaintHistoryMessage(call.message.chat.id)
+        bot.delete_message(call.message.chat.id, call.message.message_id)
     else:
         bot.delete_message(call.message.chat.id, call.message.message_id)
 
@@ -49,8 +53,8 @@ def answer(call):
 def createOrUpdateAccount(tg_id, player, hashedPassword):
     tg_id = str(tg_id)
     cursor.execute("DELETE FROM accounts WHERE tg_id=? OR player=?;", (tg_id, player))
-    cursor.execute("INSERT INTO accounts (`player`, `tg_id`, `password`) VALUES (?, ?, ?)",
-                   (player, tg_id, hashedPassword))
+    cursor.execute("INSERT INTO accounts (`player`, `tg_id`, `password`, `paintHistory`) VALUES (?, ?, ?, ?)",
+                   (player, tg_id, hashedPassword, False))
     conn.commit()
 
 
@@ -61,6 +65,22 @@ def getAccountName(tg_id):
     result = None
     for n in data:
         result = n[1]
+    return result
+
+
+def updatePlayerValue(tg_id, key, value):
+    tg_id = str(tg_id)
+    cursor.execute("UPDATE accounts SET " + str(key) + " = " + str(value) + " WHERE tg_id = " + tg_id)
+    conn.commit()
+
+
+def isPaintHistoryBuyed(tg_id):
+    tg_id = str(tg_id)
+    cursor.execute("SELECT * FROM accounts WHERE tg_id=" + tg_id)
+    data = cursor.fetchall()
+    result = False
+    for n in data:
+        result = bool(n[3])
     return result
 
 
@@ -78,6 +98,11 @@ def getValuesFromAPI(player, value):
     return requests.get('https://pbtusur.ru/PBP/api/getPlayerData.php?player=' + player + '&parameter=' + value).text
 
 
+def getPaintHistoryFromAPI(player):
+    return requests.get(
+        'https://pbtusur.ru/PBP/api/getPaintHistory.php?player=' + player + '&secret=KFl9d3dKDK32L&replaceColorWithString').text
+
+
 def isPlayerCorrect(player, hashedPassword):
     return requests.get(
         'https://pbtusur.ru/PBP/api/checkPlayerAuth.php?player=' + player + '&hashedPassword=' + hashedPassword).text
@@ -90,6 +115,32 @@ def paintPixelViaAPI(player, hashedPassword, x, y, color):
 
 def current_milli_time():
     return round(time.time() * 1000)
+
+
+def removePaintHistoryAPIWaste(source):
+    source = source.replace("</font>", "").replace("<font color='", "")
+
+    while '>' in source:
+        source = source[1:]
+
+    return source
+
+
+def sendPaintHistoryMessage(userID):
+    kb = types.InlineKeyboardMarkup(row_width=1)
+    kb.add(types.InlineKeyboardButton(text='Обновить',
+                                      callback_data='paintHistory@update'))
+    text = ""
+    counter = 1
+    for line in getPaintHistoryFromAPI(getAccountName(userID)).split("@!@"):
+        data = line.split(";")
+        if len(data) == 4:
+            previousColor = removePaintHistoryAPIWaste(data[3])
+            newColor = removePaintHistoryAPIWaste(data[2])
+            text += str(counter) + ") (" + data[0] + ";" + data[1] + "): " + previousColor + " -> " + newColor + "\n"
+            counter += 1
+    bot.send_message(userID, "Ваши последние закрашивания:\n" + text,
+                     reply_markup=kb)
 
 
 @bot.message_handler(content_types=['text'])
@@ -147,7 +198,7 @@ def get_text_messages(message):
             return
 
         waitingToColorChoose.append(player)
-        kb = types.InlineKeyboardMarkup(row_width=1)
+        kb = types.InlineKeyboardMarkup(row_width=3)
         kb.add(types.InlineKeyboardButton(text='Красный',
                                           callback_data='paint@' + player + '@' + x + '@' + y + '@-65536'))
         kb.add(types.InlineKeyboardButton(text='Зелёный',
@@ -173,8 +224,45 @@ def get_text_messages(message):
 
     if message.text == "/help":
         bot.send_message(message.from_user.id,
-                         "Помощь:\n\n1) /auth <НИК> <ПАРОЛЬ> - Сменить аккаунт\n2) /profile - Ваш профиль\n3) /canvas - Получить изображение полотна\n4) /paint <x;y> - Закрасить пиксель")
+                         "Помощь:\n\n1) /auth <НИК> <ПАРОЛЬ> - Сменить аккаунт\n2) /profile - Ваш профиль\n3) /canvas - Получить изображение полотна\n4) /paint <x;y> - Закрасить пиксель\n5) /paintHistory - Ваши последние закрашивания")
         return
+
+    if message.text == "/paintHistory":
+        if isPaintHistoryBuyed(message.from_user.id):
+            sendPaintHistoryMessage(message.from_user.id)
+        else:
+            keyboard = types.InlineKeyboardMarkup()
+            button = types.InlineKeyboardButton(text="Оплатить", pay=True)
+            keyboard.add(button)
+            prices = [types.LabeledPrice(label="XTR", amount=1)]  # 1 XTR
+            bot.send_invoice(
+                message.from_user.id,
+                title="История закрашиваний",
+                description="Функция просмотра истории закрашиваний является платной. Вы можете приобрести её раз и навсегда",
+                invoice_payload="paintHistory_purchase_payload",
+                provider_token="",
+                currency="XTR",
+                prices=prices,
+                reply_markup=keyboard
+            )
+        return
+
+
+@bot.pre_checkout_query_handler(func=lambda query: True)
+def handle_pre_checkout_query(pre_checkout_query):
+    bot.answer_pre_checkout_query(pre_checkout_query.id, ok=True)
+
+
+@bot.message_handler(content_types=['successful_payment'])
+def handle_successful_payment(message):
+    user_id = message.from_user.id
+    if isPaintHistoryBuyed(user_id):
+        print(message.successful_payment.provider_payment_charge_id)
+        # bot.refund_star_payment(user_id, message.successful_payment.provider_payment_charge_id)
+        bot.send_message(message.chat.id, "У вас уже приобретена эта услуга")
+    else:
+        updatePlayerValue(user_id, "paintHistory", True)
+        bot.send_message(message.chat.id, "✅ Вы успешно оплатили доступ к истории закрашиваний. Введите /paintHistory")
 
 
 print("Бот запущен")
