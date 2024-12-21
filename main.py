@@ -34,11 +34,13 @@ def answer(call):
         bot.delete_message(call.message.chat.id, msgID)
         if answer == "NO_PLAYER":
             bot.send_message(call.message.chat.id, "Некорректные авторизационные данные для игрока " + player)
-        if answer == "SUCCESS":
+        elif answer == "SAME_PIXEL":
+            bot.send_message(call.message.chat.id, "Вы не можете закрасить пиксель тем же цветом")
+        elif answer == "SUCCESS":
             bot.send_message(call.message.chat.id, "Успех! Пиксель закрашен на (" + data[2] + ";" + data[3] + ")")
-        if answer == "INCORRECT_COORDS":
+        elif answer == "INCORRECT_COORDS":
             bot.send_message(call.message.chat.id, "Координат (" + data[2] + ";" + data[3] + ") нет на поле")
-        if answer.startswith("DELAY:"):
+        elif answer.startswith("DELAY:"):
             seconds = answer.split(":")[1]
             bot.send_message(call.message.chat.id,
                              "Не так быстро! Вы сможете закрасить пиксель через " + seconds + " сек.")
@@ -162,11 +164,11 @@ def get_text_messages(message):
                 bot.send_message(message.from_user.id,
                                  "Вы успешно привязали аккаунт " + name + " к этому Телеграмм аккаунту")
                 print("Игрок " + name + " успешно авторизован")
-            if apiAnswer == "INCORRECT_PASSWORD":
+            elif apiAnswer == "INCORRECT_PASSWORD":
                 bot.send_message(message.from_user.id,
                                  "Вы указали неверный пароль")
 
-            if apiAnswer == "NO_PLAYER":
+            elif apiAnswer == "NO_PLAYER":
                 bot.send_message(message.from_user.id,
                                  "Такого игрока не существует. Зарегистрируйтесь в приложении")
         return
